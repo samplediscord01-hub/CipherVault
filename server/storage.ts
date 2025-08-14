@@ -58,14 +58,14 @@ export class MemStorage implements IStorage {
 
   private initializeDefaultApiOptions() {
     const defaultApis = [
-      { name: "Iteraplay", url: "http://localhost:3000/iteraplay-proxy", method: "POST" as const, type: "json" as const, field: "link", status: "available" as const, isActive: true },
-      { name: "Raspywave", url: "http://localhost:3000/raspywave-proxy", method: "POST" as const, type: "json" as const, field: "link", status: "available" as const, isActive: true },
-      { name: "RapidAPI", url: "http://localhost:3000/rapidapi", method: "POST" as const, type: "json" as const, field: "link", status: "available" as const, isActive: true },
-      { name: "Tera-CC", url: "http://localhost:3000/tera-downloader-cc", method: "POST" as const, type: "json" as const, field: "url", status: "limited" as const, isActive: true },
-      { name: "Ronnie Client", url: "http://localhost:3000/ronnieverse-client", method: "GET" as const, type: "query" as const, field: "url", status: "available" as const, isActive: true },
-      { name: "API Option 6", url: "http://localhost:3000/api-6", method: "POST" as const, type: "json" as const, field: "url", status: "offline" as const, isActive: false },
-      { name: "API Option 7", url: "http://localhost:3000/api-7", method: "POST" as const, type: "json" as const, field: "url", status: "available" as const, isActive: true },
-      { name: "API Option 8", url: "http://localhost:3000/api-8", method: "POST" as const, type: "json" as const, field: "url", status: "available" as const, isActive: true },
+      { name: "Iteraplay", url: "YOUR_ITERAPLAY_PROXY_URL", method: "POST" as const, type: "json" as const, field: "link", status: "offline" as const, isActive: false },
+      { name: "Raspywave", url: "YOUR_RASPYWAVE_PROXY_URL", method: "POST" as const, type: "json" as const, field: "link", status: "offline" as const, isActive: false },
+      { name: "RapidAPI", url: "YOUR_RAPIDAPI_PROXY_URL", method: "POST" as const, type: "json" as const, field: "link", status: "offline" as const, isActive: false },
+      { name: "Tera-CC", url: "YOUR_TERA_CC_PROXY_URL", method: "POST" as const, type: "json" as const, field: "url", status: "offline" as const, isActive: false },
+      { name: "Ronnie Client", url: "YOUR_RONNIE_CLIENT_URL", method: "GET" as const, type: "query" as const, field: "url", status: "offline" as const, isActive: false },
+      { name: "API Option 6", url: "YOUR_API_6_URL", method: "POST" as const, type: "json" as const, field: "url", status: "offline" as const, isActive: false },
+      { name: "API Option 7", url: "YOUR_API_7_URL", method: "POST" as const, type: "json" as const, field: "url", status: "offline" as const, isActive: false },
+      { name: "API Option 8", url: "YOUR_API_8_URL", method: "POST" as const, type: "json" as const, field: "url", status: "offline" as const, isActive: false },
     ];
 
     defaultApis.forEach(api => {

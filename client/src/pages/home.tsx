@@ -9,6 +9,7 @@ import { useMediaItems } from "@/hooks/use-media";
 import { MediaCard } from "@/components/media-card";
 import { DetailModal } from "@/components/detail-modal";
 import { Sidebar } from "@/components/sidebar";
+import { ApiSettings } from "@/components/api-settings";
 import type { MediaItemWithTags, MediaSearchParams } from "@shared/schema";
 
 export default function Home() {
@@ -107,14 +108,7 @@ export default function Home() {
               >
                 <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="p-2 hover:bg-surface-light"
-                title="Settings"
-              >
-                <Settings className="h-4 w-4" />
-              </Button>
+              <ApiSettings />
             </div>
           </div>
         </div>

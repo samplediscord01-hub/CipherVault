@@ -242,6 +242,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/api-options", async (req, res) => {
+    try {
+      const apiOption = await storage.createApiOption(req.body);
+      res.status(201).json(apiOption);
+    } catch (error) {
+      console.error("Error creating API option:", error);
+      res.status(500).json({ error: "Failed to create API option" });
+    }
+  });
+
+  app.put("/api/api-options/:id", async (req, res) => {
+    try {
+      const apiOption = await storage.updateApiOption(req.params.id, req.body);
+      if (!apiOption) {
+        return res.status(404).json({ error: "API option not found" });
+      }
+      res.json(apiOption);
+    } catch (error) {
+      console.error("Error updating API option:", error);
+      res.status(500).json({ error: "Failed to update API option" });
+    }
+  });
+
+  app.delete("/api/api-options/:id", async (req, res) => {
+    try {
+      const deleted = await storage.deleteApiOption(req.params.id);
+      if (!deleted) {
+        return res.status(404).json({ error: "API option not found" });
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting API option:", error);
+      res.status(500).json({ error: "Failed to delete API option" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
