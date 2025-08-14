@@ -1,6 +1,6 @@
 import { type MediaSearchParams, type ApiOption } from "@shared/schema";
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
+export const API_BASE_URL = window.electronAPI?.serverAddress || import.meta.env.VITE_API_BASE_URL || '';
 
 async function apiRequest<T>(
   method: string,

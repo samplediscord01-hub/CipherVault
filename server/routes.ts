@@ -7,6 +7,9 @@ import { z } from "zod";
 // MultiScraper integration
 import fetch from "node-fetch";
 
+const PORT = process.env.PORT || 5000;
+const BASE_URL = `http://localhost:${PORT}`;
+
 const API_PROXIES = [
   { name: "playertera", url: "/api/playertera-proxy", method: "POST", type: "json", field: "url" },
   { name: "tera-fast", url: "/api/tera-fast-proxy", method: "GET", type: "query", field: "url" },
@@ -48,6 +51,10 @@ async function scrapeMetadata(mediaItemId: string) {
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
+  app.get("/health", (req, res) => {
+    res.status(200).send("OK");
+  });
+
   // Media Items Routes
   app.get("/api/media", async (req, res) => {
     try {
@@ -578,12 +585,12 @@ async function tryProxiesForDownload(originalUrl: string) {
     try {
       let res;
       if (proxy.method === "GET") {
-        const q = `${proxy.url}?${proxy.type === "query" ? `${proxy.field}=${encodeURIComponent(originalUrl)}` : ''}`;
+        const q = `${BASE_URL}${proxy.url}?${proxy.type === "query" ? `${proxy.field}=${encodeURIComponent(originalUrl)}` : ''}`;
         res = await fetch(q, { method: 'GET' });
       } else {
         const body = proxy.type === "json" ? JSON.stringify({ [proxy.field]: originalUrl }) : `${proxy.field}=${encodeURIComponent(originalUrl)}`;
         const headers = proxy.type === "json" ? { 'Content-Type': 'application/json' } : { 'Content-Type': 'application/x-www-form-urlencoded' };
-        res = await fetch(proxy.url, { method: 'POST', headers, body });
+        res = await fetch(`${BASE_URL}${proxy.url}`, { method: 'POST', headers, body });
       }
 
       if (!res.ok) {
