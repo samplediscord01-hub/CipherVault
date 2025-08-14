@@ -11,8 +11,11 @@ export function useMediaItems(params: MediaSearchParams) {
   if (params.page) queryParams.append("page", params.page.toString());
   if (params.limit) queryParams.append("limit", params.limit.toString());
 
+  const queryString = queryParams.toString();
+  const url = queryString ? `/api/media?${queryString}` : "/api/media";
+
   return useQuery<{ items: MediaItemWithTags[]; total: number }>({
-    queryKey: ["/api/media", queryParams.toString()],
+    queryKey: [url],
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }
