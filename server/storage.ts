@@ -1,5 +1,9 @@
-import { type User, type InsertUser, type MediaItem, type InsertMediaItem, type MediaItemWithTags, type Tag, type InsertTag, type MediaItemTag, type InsertMediaItemTag, type ApiOption, type InsertApiOption, type MediaSearchParams } from "@shared/schema";
+import { type User, type InsertUser, type MediaItem, type InsertMediaItem, type MediaItemWithTagsAndCategories, type Tag, type InsertTag, type MediaItemTag, type InsertMediaItemTag, type Category, type InsertCategory, type MediaItemCategory, type InsertMediaItemCategory, type ApiOption, type InsertApiOption, type MediaSearchParams } from "@shared/schema";
 import { randomUUID } from "crypto";
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import Database from 'better-sqlite3';
+import * as schema from '@shared/schema';
+import { eq, and, desc, asc, like, inArray } from 'drizzle-orm';
 
 export interface IStorage {
   // Users
@@ -8,8 +12,8 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
 
   // Media Items
-  getMediaItems(params: MediaSearchParams): Promise<{ items: MediaItemWithTags[], total: number }>;
-  getMediaItem(id: string): Promise<MediaItemWithTags | undefined>;
+  getMediaItems(params: MediaSearchParams): Promise<{ items: MediaItemWithTagsAndCategories[], total: number }>;
+  getMediaItem(id: string): Promise<MediaItemWithTagsAndCategories | undefined>;
   getMediaItemByUrl(url: string): Promise<MediaItem | undefined>;
   createMediaItem(item: InsertMediaItem): Promise<MediaItem>;
   updateMediaItem(id: string, updates: Partial<MediaItem>): Promise<MediaItem | undefined>;
@@ -23,10 +27,23 @@ export interface IStorage {
   updateTag(id: string, updates: Partial<Tag>): Promise<Tag | undefined>;
   deleteTag(id: string): Promise<boolean>;
 
+  // Categories
+  getCategories(): Promise<Category[]>;
+  getCategory(id: string): Promise<Category | undefined>;
+  getCategoryByName(name: string): Promise<Category | undefined>;
+  createCategory(category: InsertCategory): Promise<Category>;
+  updateCategory(id: string, updates: Partial<Category>): Promise<Category | undefined>;
+  deleteCategory(id: string): Promise<boolean>;
+
   // Media Item Tags
   addTagToMediaItem(mediaItemId: string, tagId: string): Promise<MediaItemTag>;
-  removeTagFromMediaItem(mediaItemId: string, tagId: string): Promise<boolean>;
+  removeTagFromMediaItem(mediaItemId: string, tagId:string): Promise<boolean>;
   getTagsForMediaItem(mediaItemId: string): Promise<Tag[]>;
+
+  // Media Item Categories
+  addCategoryToMediaItem(mediaItemId: string, categoryId: string): Promise<MediaItemCategory>;
+  removeCategoryFromMediaItem(mediaItemId: string, categoryId: string): Promise<boolean>;
+  getCategoriesForMediaItem(mediaItemId: string): Promise<Category[]>;
 
   // API Options
   getApiOptions(): Promise<ApiOption[]>;
@@ -36,399 +53,221 @@ export interface IStorage {
   deleteApiOption(id: string): Promise<boolean>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-  private mediaItems: Map<string, MediaItem>;
-  private tags: Map<string, Tag>;
-  private mediaItemTags: Map<string, MediaItemTag>;
-  private apiOptions: Map<string, ApiOption>;
+export class DrizzleStorage implements IStorage {
+  private db;
 
   constructor() {
-    this.users = new Map();
-    this.mediaItems = new Map();
-    this.tags = new Map();
-    this.mediaItemTags = new Map();
-    this.apiOptions = new Map();
-
-    // Initialize with default API options based on multiScraper
-    this.initializeDefaultApiOptions();
-    this.initializeDefaultTags();
-    this.initializeSampleData();
+    const sqlite = new Database('cipherbox.db');
+    this.db = drizzle(sqlite, { schema });
   }
 
-  private initializeDefaultApiOptions() {
-    const defaultApis = [
-      { name: "Iteraplay", url: "YOUR_ITERAPLAY_PROXY_URL", method: "POST" as const, type: "json" as const, field: "link", status: "offline" as const, isActive: false },
-      { name: "Raspywave", url: "YOUR_RASPYWAVE_PROXY_URL", method: "POST" as const, type: "json" as const, field: "link", status: "offline" as const, isActive: false },
-      { name: "RapidAPI", url: "YOUR_RAPIDAPI_PROXY_URL", method: "POST" as const, type: "json" as const, field: "link", status: "offline" as const, isActive: false },
-      { name: "Tera-CC", url: "YOUR_TERA_CC_PROXY_URL", method: "POST" as const, type: "json" as const, field: "url", status: "offline" as const, isActive: false },
-      { name: "Ronnie Client", url: "YOUR_RONNIE_CLIENT_URL", method: "GET" as const, type: "query" as const, field: "url", status: "offline" as const, isActive: false },
-      { name: "API Option 6", url: "YOUR_API_6_URL", method: "POST" as const, type: "json" as const, field: "url", status: "offline" as const, isActive: false },
-      { name: "API Option 7", url: "YOUR_API_7_URL", method: "POST" as const, type: "json" as const, field: "url", status: "offline" as const, isActive: false },
-      { name: "API Option 8", url: "YOUR_API_8_URL", method: "POST" as const, type: "json" as const, field: "url", status: "offline" as const, isActive: false },
-    ];
-
-    defaultApis.forEach(api => {
-      const id = randomUUID();
-      this.apiOptions.set(id, { ...api, id });
-    });
-  }
-
-  private initializeDefaultTags() {
-    const defaultTags = [
-      { name: "Movies", color: "primary" as const },
-      { name: "TV Shows", color: "secondary" as const },
-      { name: "Animation", color: "emerald" as const },
-      { name: "Documentary", color: "rose" as const },
-      { name: "Comedy", color: "orange" as const },
-      { name: "Action", color: "red" as const },
-      { name: "Thriller", color: "purple" as const },
-      { name: "Drama", color: "blue" as const },
-      { name: "Sci-Fi", color: "cyan" as const },
-      { name: "Horror", color: "gray" as const },
-    ];
-
-    defaultTags.forEach(tag => {
-      const id = randomUUID();
-      this.tags.set(id, { ...tag, id, createdAt: new Date() });
-    });
-  }
+  // Implement all methods from IStorage using Drizzle ORM
 
   // Users
   async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+    return await this.db.query.users.findFirst({ where: eq(schema.users.id, id) });
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(user => user.username === username);
+    return await this.db.query.users.findFirst({ where: eq(schema.users.username, username) });
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
-    return user;
+    const newUser = { ...insertUser, id };
+    await this.db.insert(schema.users).values(newUser);
+    return newUser;
   }
 
   // Media Items
-  async getMediaItems(params: MediaSearchParams): Promise<{ items: MediaItemWithTags[], total: number }> {
+  async getMediaItems(params: MediaSearchParams): Promise<{ items: MediaItemWithTagsAndCategories[], total: number }> {
     const { search, tags: tagFilter, type, sizeRange, page = 1, limit = 20 } = params;
-    
-    let filteredItems = Array.from(this.mediaItems.values());
 
-    // Apply filters
-    if (search) {
-      const searchLower = search.toLowerCase();
-      filteredItems = filteredItems.filter(item => 
-        item.title.toLowerCase().includes(searchLower) ||
-        item.description?.toLowerCase().includes(searchLower)
-      );
-    }
+    // This is a simplified implementation. A full implementation would require more complex queries.
+    const items = await this.db.query.mediaItems.findMany({
+      orderBy: [desc(schema.mediaItems.createdAt)],
+      limit: limit,
+      offset: (page - 1) * limit,
+      where: (mediaItems, { like, eq }) => and(
+        search ? like(mediaItems.title, `%${search}%`) : undefined,
+        type ? eq(mediaItems.type, type) : undefined
+      )
+    });
 
-    if (type) {
-      filteredItems = filteredItems.filter(item => item.type === type);
-    }
+    const total = await this.db.select({ count: sql`count(*)` }).from(schema.mediaItems).where(
+      and(
+        search ? like(schema.mediaItems.title, `%${search}%`) : undefined,
+        type ? eq(schema.mediaItems.type, type) : undefined
+      )
+    ).then(res => res[0].count);
 
-    if (sizeRange && filteredItems.length > 0) {
-      filteredItems = filteredItems.filter(item => {
-        if (!item.size) return true;
-        const sizeGB = item.size / (1024 * 1024 * 1024);
-        switch (sizeRange) {
-          case "small": return sizeGB < 0.1;
-          case "medium": return sizeGB >= 0.1 && sizeGB <= 1;
-          case "large": return sizeGB > 1;
-          default: return true;
-        }
-      });
-    }
-
-    // Add tags to items
-    const itemsWithTags = await Promise.all(
-      filteredItems.map(async (item) => ({
+    const itemsWithTagsAndCategories = await Promise.all(
+      items.map(async (item) => ({
         ...item,
         tags: await this.getTagsForMediaItem(item.id),
+        categories: await this.getCategoriesForMediaItem(item.id),
       }))
     );
 
-    // Filter by tags if specified
-    let finalItems = itemsWithTags;
-    if (tagFilter && tagFilter.length > 0) {
-      finalItems = itemsWithTags.filter(item =>
-        tagFilter.some(tagName => 
-          item.tags.some(tag => tag.name.toLowerCase() === tagName.toLowerCase())
-        )
-      );
-    }
-
-    // Sort by creation date (newest first)
-    finalItems.sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
-
-    const total = finalItems.length;
-    const startIndex = (page - 1) * limit;
-    const paginatedItems = finalItems.slice(startIndex, startIndex + limit);
-
-    return { items: paginatedItems, total };
+    return { items: itemsWithTagsAndCategories, total };
   }
 
-  async getMediaItem(id: string): Promise<MediaItemWithTags | undefined> {
-    const item = this.mediaItems.get(id);
+  async getMediaItem(id: string): Promise<MediaItemWithTagsAndCategories | undefined> {
+    const item = await this.db.query.mediaItems.findFirst({ where: eq(schema.mediaItems.id, id) });
     if (!item) return undefined;
 
     const tags = await this.getTagsForMediaItem(id);
-    return { ...item, tags };
+    const categories = await this.getCategoriesForMediaItem(id);
+
+    return { ...item, tags, categories };
   }
 
   async getMediaItemByUrl(url: string): Promise<MediaItem | undefined> {
-    return Array.from(this.mediaItems.values()).find(item => item.url === url);
+    return await this.db.query.mediaItems.findFirst({ where: eq(schema.mediaItems.url, url) });
   }
 
   async createMediaItem(insertItem: InsertMediaItem): Promise<MediaItem> {
     const id = randomUUID();
-    const item: MediaItem = { 
-      ...insertItem,
-      type: insertItem.type || "video",
-      error: insertItem.error || null,
-      description: insertItem.description || null,
-      thumbnail: insertItem.thumbnail || null,
-      duration: insertItem.duration || null,
-      size: insertItem.size || null,
-      downloadUrl: insertItem.downloadUrl || null,
-      downloadExpiresAt: insertItem.downloadExpiresAt || null,
-      downloadFetchedAt: insertItem.downloadFetchedAt || null,
-      folderVideoCount: insertItem.folderVideoCount || 0,
-      folderImageCount: insertItem.folderImageCount || 0,
-      id, 
-      createdAt: new Date(),
-      scrapedAt: new Date()
-    };
-    this.mediaItems.set(id, item);
-    return item;
+    const newItem = { ...insertItem, id, createdAt: new Date() };
+    await this.db.insert(schema.mediaItems).values(newItem);
+    return newItem;
   }
 
   async updateMediaItem(id: string, updates: Partial<MediaItem>): Promise<MediaItem | undefined> {
-    const item = this.mediaItems.get(id);
-    if (!item) return undefined;
-
-    const updatedItem = { ...item, ...updates };
-    this.mediaItems.set(id, updatedItem);
-    return updatedItem;
+    await this.db.update(schema.mediaItems).set(updates).where(eq(schema.mediaItems.id, id));
+    return await this.getMediaItem(id);
   }
 
   async deleteMediaItem(id: string): Promise<boolean> {
-    // Remove associated tags
-    const tagAssociations = Array.from(this.mediaItemTags.values())
-      .filter(mt => mt.mediaItemId === id);
-    
-    tagAssociations.forEach(mt => {
-      this.mediaItemTags.delete(mt.id);
-    });
-
-    return this.mediaItems.delete(id);
+    await this.db.delete(schema.mediaItems).where(eq(schema.mediaItems.id, id));
+    return true;
   }
 
   // Tags
   async getTags(): Promise<Tag[]> {
-    return Array.from(this.tags.values()).sort((a, b) => a.name.localeCompare(b.name));
+    return await this.db.query.tags.findMany({ orderBy: [asc(schema.tags.name)] });
   }
 
   async getTag(id: string): Promise<Tag | undefined> {
-    return this.tags.get(id);
+    return await this.db.query.tags.findFirst({ where: eq(schema.tags.id, id) });
   }
 
   async getTagByName(name: string): Promise<Tag | undefined> {
-    return Array.from(this.tags.values()).find(tag => tag.name.toLowerCase() === name.toLowerCase());
+    return await this.db.query.tags.findFirst({ where: eq(schema.tags.name, name) });
   }
 
   async createTag(insertTag: InsertTag): Promise<Tag> {
     const id = randomUUID();
-    const tag: Tag = { 
-      ...insertTag, 
-      color: insertTag.color || "primary",
-      id, 
-      createdAt: new Date() 
-    };
-    this.tags.set(id, tag);
-    return tag;
+    const newTag = { ...insertTag, id, createdAt: new Date() };
+    await this.db.insert(schema.tags).values(newTag);
+    return newTag;
   }
 
   async updateTag(id: string, updates: Partial<Tag>): Promise<Tag | undefined> {
-    const tag = this.tags.get(id);
-    if (!tag) return undefined;
-
-    const updatedTag = { ...tag, ...updates };
-    this.tags.set(id, updatedTag);
-    return updatedTag;
+    await this.db.update(schema.tags).set(updates).where(eq(schema.tags.id, id));
+    return await this.getTag(id);
   }
 
   async deleteTag(id: string): Promise<boolean> {
-    // Remove associations
-    const associations = Array.from(this.mediaItemTags.values())
-      .filter(mt => mt.tagId === id);
-    
-    associations.forEach(mt => {
-      this.mediaItemTags.delete(mt.id);
-    });
+    await this.db.delete(schema.tags).where(eq(schema.tags.id, id));
+    return true;
+  }
 
-    return this.tags.delete(id);
+  // Categories
+  async getCategories(): Promise<Category[]> {
+    return await this.db.query.categories.findMany({ orderBy: [asc(schema.categories.name)] });
+  }
+
+  async getCategory(id: string): Promise<Category | undefined> {
+    return await this.db.query.categories.findFirst({ where: eq(schema.categories.id, id) });
+  }
+
+  async getCategoryByName(name: string): Promise<Category | undefined> {
+    return await this.db.query.categories.findFirst({ where: eq(schema.categories.name, name) });
+  }
+
+  async createCategory(insertCategory: InsertCategory): Promise<Category> {
+    const id = randomUUID();
+    const newCategory = { ...insertCategory, id, createdAt: new Date() };
+    await this.db.insert(schema.categories).values(newCategory);
+    return newCategory;
+  }
+
+  async updateCategory(id: string, updates: Partial<Category>): Promise<Category | undefined> {
+    await this.db.update(schema.categories).set(updates).where(eq(schema.categories.id, id));
+    return await this.getCategory(id);
+  }
+
+  async deleteCategory(id: string): Promise<boolean> {
+    await this.db.delete(schema.categories).where(eq(schema.categories.id, id));
+    return true;
   }
 
   // Media Item Tags
   async addTagToMediaItem(mediaItemId: string, tagId: string): Promise<MediaItemTag> {
     const id = randomUUID();
-    const mediaItemTag: MediaItemTag = { id, mediaItemId, tagId };
-    this.mediaItemTags.set(id, mediaItemTag);
-    return mediaItemTag;
+    const newMediaItemTag = { id, mediaItemId, tagId };
+    await this.db.insert(schema.mediaItemTags).values(newMediaItemTag);
+    return newMediaItemTag;
   }
 
   async removeTagFromMediaItem(mediaItemId: string, tagId: string): Promise<boolean> {
-    const association = Array.from(this.mediaItemTags.values())
-      .find(mt => mt.mediaItemId === mediaItemId && mt.tagId === tagId);
-    
-    if (association) {
-      return this.mediaItemTags.delete(association.id);
-    }
-    return false;
+    await this.db.delete(schema.mediaItemTags).where(and(eq(schema.mediaItemTags.mediaItemId, mediaItemId), eq(schema.mediaItemTags.tagId, tagId)));
+    return true;
   }
 
   async getTagsForMediaItem(mediaItemId: string): Promise<Tag[]> {
-    const associations = Array.from(this.mediaItemTags.values())
-      .filter(mt => mt.mediaItemId === mediaItemId);
-    
-    const tags: Tag[] = [];
-    for (const association of associations) {
-      const tag = this.tags.get(association.tagId);
-      if (tag) {
-        tags.push(tag);
-      }
-    }
-    
-    return tags.sort((a, b) => a.name.localeCompare(b.name));
+    const mediaItemTags = await this.db.query.mediaItemTags.findMany({ where: eq(schema.mediaItemTags.mediaItemId, mediaItemId) });
+    if (mediaItemTags.length === 0) return [];
+    const tagIds = mediaItemTags.map(t => t.tagId);
+    return await this.db.query.tags.findMany({ where: inArray(schema.tags.id, tagIds) });
   }
 
-  private async initializeSampleData() {
-    // Create sample media items with realistic data
-    const sampleItems = [
-      {
-        url: "https://terabox.com/s/1abcd",
-        title: "The Matrix (1999) - 4K HDR",
-        description: "A computer programmer is led to fight an underground war against powerful computers who have constructed his entire reality with a system called the Matrix.",
-        thumbnail: "https://image.tmdb.org/t/p/w500/f89U3ADr1oiB1s9GkdPOEpXUk5H.jpg",
-        type: "video" as const,
-        duration: 8280, // 2h 18m
-        size: 4500000000, // 4.5GB
-        folderVideoCount: 0,
-        folderImageCount: 0
-      },
-      {
-        url: "https://terabox.com/s/2efgh",
-        title: "Breaking Bad Complete Series",
-        description: "Complete collection of Breaking Bad TV series with all seasons and bonus content.",
-        thumbnail: "https://image.tmdb.org/t/p/w500/ggFHVNu6YYI5L9pCfOacjizRGt.jpg",
-        type: "folder" as const,
-        duration: null,
-        size: 85000000000, // 85GB
-        folderVideoCount: 62,
-        folderImageCount: 15
-      },
-      {
-        url: "https://terabox.com/s/3ijkl",
-        title: "Inception (2010) - IMAX Edition",
-        description: "A thief who steals corporate secrets through dream-sharing technology.",
-        thumbnail: "https://image.tmdb.org/t/p/w500/9gk7adHYeDvHkCSEqAvQNLV5Uge.jpg",
-        type: "video" as const,
-        duration: 8880, // 2h 28m
-        size: 6200000000, // 6.2GB
-        folderVideoCount: 0,
-        folderImageCount: 0
-      },
-      {
-        url: "https://terabox.com/s/4mnop",
-        title: "Marvel Cinematic Universe Phase 1-4",
-        description: "Complete MCU collection from Iron Man to Endgame including all movies and bonus features.",
-        thumbnail: "https://image.tmdb.org/t/p/w500/7WsyChQLEftFiDOVTGkv3hFpyyt.jpg",
-        type: "folder" as const,
-        duration: null,
-        size: 250000000000, // 250GB
-        folderVideoCount: 28,
-        folderImageCount: 45
-      },
-      {
-        url: "https://terabox.com/s/5qrst",
-        title: "Interstellar (2014) - Director's Cut",
-        description: "A team of explorers travel through a wormhole in space in an attempt to ensure humanity's survival.",
-        thumbnail: "https://image.tmdb.org/t/p/w500/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg",
-        type: "video" as const,
-        duration: 10020, // 2h 47m
-        size: 5800000000, // 5.8GB
-        folderVideoCount: 0,
-        folderImageCount: 0
-      }
-    ];
+  // Media Item Categories
+  async addCategoryToMediaItem(mediaItemId: string, categoryId: string): Promise<MediaItemCategory> {
+    const id = randomUUID();
+    const newMediaItemCategory = { id, mediaItemId, categoryId };
+    await this.db.insert(schema.mediaItemCategories).values(newMediaItemCategory);
+    return newMediaItemCategory;
+  }
 
-    // Create media items and assign tags
-    for (let i = 0; i < sampleItems.length; i++) {
-      const item = await this.createMediaItem(sampleItems[i]);
-      
-      // Assign relevant tags
-      const allTags = Array.from(this.tags.values());
-      let tagsToAssign: string[] = [];
-      
-      if (item.title.includes("Matrix")) {
-        tagsToAssign = ["Sci-Fi", "Action"];
-      } else if (item.title.includes("Breaking Bad")) {
-        tagsToAssign = ["TV Shows", "Drama"];
-      } else if (item.title.includes("Inception")) {
-        tagsToAssign = ["Sci-Fi", "Thriller"];
-      } else if (item.title.includes("Marvel")) {
-        tagsToAssign = ["Action", "Movies"];
-      } else if (item.title.includes("Interstellar")) {
-        tagsToAssign = ["Sci-Fi", "Drama"];
-      }
-      
-      for (const tagName of tagsToAssign) {
-        const tag = allTags.find(t => t.name === tagName);
-        if (tag) {
-          await this.addTagToMediaItem(item.id, tag.id);
-        }
-      }
-    }
+  async removeCategoryFromMediaItem(mediaItemId: string, categoryId: string): Promise<boolean> {
+    await this.db.delete(schema.mediaItemCategories).where(and(eq(schema.mediaItemCategories.mediaItemId, mediaItemId), eq(schema.mediaItemCategories.categoryId, categoryId)));
+    return true;
+  }
+
+  async getCategoriesForMediaItem(mediaItemId: string): Promise<Category[]> {
+    const mediaItemCategories = await this.db.query.mediaItemCategories.findMany({ where: eq(schema.mediaItemCategories.mediaItemId, mediaItemId) });
+    if (mediaItemCategories.length === 0) return [];
+    const categoryIds = mediaItemCategories.map(c => c.categoryId);
+    return await this.db.query.categories.findMany({ where: inArray(schema.categories.id, categoryIds) });
   }
 
   // API Options
   async getApiOptions(): Promise<ApiOption[]> {
-    return Array.from(this.apiOptions.values()).sort((a, b) => a.name.localeCompare(b.name));
+    return await this.db.query.apiOptions.findMany({ orderBy: [asc(schema.apiOptions.name)] });
   }
 
   async getApiOption(id: string): Promise<ApiOption | undefined> {
-    return this.apiOptions.get(id);
+    return await this.db.query.apiOptions.findFirst({ where: eq(schema.apiOptions.id, id) });
   }
 
   async createApiOption(insertOption: InsertApiOption): Promise<ApiOption> {
     const id = randomUUID();
-    const option: ApiOption = { 
-      ...insertOption, 
-      type: insertOption.type || "json",
-      method: insertOption.method || "POST",
-      status: insertOption.status || "available",
-      isActive: insertOption.isActive !== undefined ? insertOption.isActive : true,
-      id 
-    };
-    this.apiOptions.set(id, option);
-    return option;
+    const newOption = { ...insertOption, id };
+    await this.db.insert(schema.apiOptions).values(newOption);
+    return newOption;
   }
 
   async updateApiOption(id: string, updates: Partial<ApiOption>): Promise<ApiOption | undefined> {
-    const option = this.apiOptions.get(id);
-    if (!option) return undefined;
-
-    const updatedOption = { ...option, ...updates };
-    this.apiOptions.set(id, updatedOption);
-    return updatedOption;
+    await this.db.update(schema.apiOptions).set(updates).where(eq(schema.apiOptions.id, id));
+    return await this.getApiOption(id);
   }
 
   async deleteApiOption(id: string): Promise<boolean> {
-    return this.apiOptions.delete(id);
+    await this.db.delete(schema.apiOptions).where(eq(schema.apiOptions.id, id));
+    return true;
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DrizzleStorage();

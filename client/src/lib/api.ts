@@ -1,10 +1,12 @@
+import { type MediaSearchParams, type ApiOption } from "@shared/schema";
+
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
-export async function apiRequest(
+async function apiRequest<T>(
   method: string,
   url: string,
   data?: unknown
-): Promise<Response> {
+): Promise<T> {
   const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
   
   const response = await fetch(fullUrl, {
@@ -20,43 +22,39 @@ export async function apiRequest(
     throw new Error(`API Error: ${response.status} ${errorText}`);
   }
 
-  return response;
+  return response.json() as Promise<T>;
 }
 
-export async function uploadFile(file: File, onProgress?: (progress: number) => void): Promise<any> {
-  const formData = new FormData();
-  formData.append('file', file);
+// Media Items
+export const getMediaItems = (params: MediaSearchParams) => {
+  const query = new URLSearchParams();
+  if (params.search) query.set('search', params.search);
+  if (params.type) query.set('type', params.type);
+  if (params.page) query.set('page', params.page.toString());
+  if (params.limit) query.set('limit', params.limit.toString());
+  if (params.tags) params.tags.forEach(tag => query.append('tags', tag));
 
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
+  return apiRequest<any>('GET', `/api/media?${query.toString()}`);
+};
 
-    if (onProgress) {
-      xhr.upload.addEventListener('progress', (e) => {
-        if (e.lengthComputable) {
-          const progress = (e.loaded / e.total) * 100;
-          onProgress(progress);
-        }
-      });
-    }
+export const getMediaItem = (id: string) => apiRequest<any>('GET', `/api/media/${id}`);
+export const createMediaItems = (urls: string[]) => apiRequest<any>('POST', '/api/media', { urls });
+export const refreshMetadata = (id: string) => apiRequest<any>('POST', `/api/media/${id}/refresh`);
 
-    xhr.addEventListener('load', () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const response = JSON.parse(xhr.responseText);
-          resolve(response);
-        } catch (e) {
-          resolve(xhr.responseText);
-        }
-      } else {
-        reject(new Error(`Upload failed: ${xhr.status} ${xhr.statusText}`));
-      }
-    });
+// Tags
+export const getTags = () => apiRequest<any[]>('GET', '/api/tags');
+export const createTag = (name: string, color: string) => apiRequest<any>('POST', '/api/tags', { name, color });
+export const deleteTag = (id: string) => apiRequest<any>('DELETE', `/api/tags/${id}`);
+export const addTagToMediaItem = (mediaItemId: string, tagId: string) => apiRequest<any>('POST', `/api/media/${mediaItemId}/tags/${tagId}`);
+export const removeTagFromMediaItem = (mediaItemId: string, tagId: string) => apiRequest<any>('DELETE', `/api/media/${mediaItemId}/tags/${tagId}`);
 
-    xhr.addEventListener('error', () => {
-      reject(new Error('Upload failed'));
-    });
+// Categories
+export const getCategories = () => apiRequest<any[]>('GET', '/api/categories');
+export const createCategory = (name: string) => apiRequest<any>('POST', '/api/categories', { name });
+export const deleteCategory = (id: string) => apiRequest<any>('DELETE', `/api/categories/${id}`);
+export const addCategoryToMediaItem = (mediaItemId: string, categoryId: string) => apiRequest<any>('POST', `/api/media/${mediaItemId}/categories/${categoryId}`);
+export const removeCategoryFromMediaItem = (mediaItemId: string, categoryId: string) => apiRequest<any>('DELETE', `/api/media/${mediaItemId}/categories/${categoryId}`);
 
-    xhr.open('POST', `${API_BASE_URL}/api/upload`);
-    xhr.send(formData);
-  });
-}
+// API Options
+export const getApiOptions = () => apiRequest<ApiOption[]>('GET', '/api/api-options');
+export const updateApiOption = (id: string, updates: Partial<ApiOption>) => apiRequest<ApiOption>('PUT', `/api/api-options/${id}`, updates);

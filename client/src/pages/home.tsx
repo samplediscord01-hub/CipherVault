@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Search, Menu, Settings, RefreshCw, Grid3X3, List } from "lucide-react";
+import { Search, Menu, Settings, RefreshCw, Grid3X3, List, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Link } from "wouter";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useDebounce } from "@/hooks/use-debounce";
 import { useMediaItems } from "@/hooks/use-media";
@@ -15,6 +16,7 @@ import type { MediaItemWithTags, MediaSearchParams } from "@shared/schema";
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedType, setSelectedType] = useState<"video" | "folder" | undefined>();
   const [selectedSizeRange, setSelectedSizeRange] = useState<"small" | "medium" | "large" | undefined>();
   const [sortBy, setSortBy] = useState("date");
@@ -28,6 +30,7 @@ export default function Home() {
   const searchParams: MediaSearchParams = {
     search: debouncedSearchQuery || undefined,
     tags: selectedTags.length > 0 ? selectedTags : undefined,
+    categories: selectedCategories.length > 0 ? selectedCategories : undefined,
     type: selectedType,
     sizeRange: selectedSizeRange,
     page: currentPage,
@@ -39,13 +42,21 @@ export default function Home() {
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearchQuery, selectedTags, selectedType, selectedSizeRange]);
+  }, [debouncedSearchQuery, selectedTags, selectedCategories, selectedType, selectedSizeRange]);
 
   const handleTagToggle = (tagName: string) => {
     setSelectedTags(prev => 
       prev.includes(tagName) 
         ? prev.filter(t => t !== tagName)
         : [...prev, tagName]
+    );
+  };
+
+  const handleCategoryToggle = (categoryName: string) => {
+    setSelectedCategories(prev =>
+      prev.includes(categoryName)
+        ? prev.filter(c => c !== categoryName)
+        : [...prev, categoryName]
     );
   };
 
@@ -98,6 +109,12 @@ export default function Home() {
             
             {/* User Actions */}
             <div className="flex items-center space-x-3">
+              <Button variant="outline" asChild>
+                <Link to="/add-media">
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Media
+                </Link>
+              </Button>
               <Button
                 variant="ghost"
                 size="sm"
@@ -121,6 +138,8 @@ export default function Home() {
           onClose={closeSidebar}
           selectedTags={selectedTags}
           onTagToggle={handleTagToggle}
+          selectedCategories={selectedCategories}
+          onCategoryToggle={handleCategoryToggle}
           selectedType={selectedType}
           onTypeChange={setSelectedType}
           selectedSizeRange={selectedSizeRange}

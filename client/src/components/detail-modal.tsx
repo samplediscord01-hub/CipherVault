@@ -5,9 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { VideoPlayer } from "./video-player";
-import { apiRequest } from "@/lib/queryClient";
+import { useMediaItem } from "@/hooks/use-media";
+import { refreshMetadata, deleteMediaItem as deleteMediaItemApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import type { MediaItemWithTags, ApiOption } from "@shared/schema";
+import type { MediaItemWithTagsAndCategories, ApiOption } from "@shared/schema";
+import { TagCategoryManager } from "./tag-category-manager";
 
 interface DetailModalProps {
   mediaId: string;
@@ -57,22 +59,16 @@ export function DetailModal({ mediaId, isOpen, onClose }: DetailModalProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: mediaItem, isLoading: mediaLoading } = useQuery<MediaItemWithTags>({
-    queryKey: ["/api/media", mediaId],
-    enabled: !!mediaId,
-  });
+  const { data: mediaItem, isLoading: mediaLoading } = useMediaItem(mediaId);
 
   const { data: apiOptions = [] } = useQuery<ApiOption[]>({
     queryKey: ["/api/api-options"],
   });
 
   const refreshMetadataMutation = useMutation({
-    mutationFn: async () => {
-      const response = await apiRequest("POST", `/api/media/${mediaId}/refresh`);
-      return response.json();
-    },
+    mutationFn: () => refreshMetadata(mediaId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/media", mediaId] });
+      queryClient.invalidateQueries({ queryKey: ['mediaItem', mediaId] });
       toast({
         title: "Metadata Refreshed",
         description: "Successfully updated metadata from external sources.",
@@ -89,7 +85,9 @@ export function DetailModal({ mediaId, isOpen, onClose }: DetailModalProps) {
 
   const getDownloadUrlMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("GET", `/api/media/${mediaId}/download${selectedApiId ? `?apiId=${selectedApiId}` : ''}`);
+      // This is not in the new api.ts, so we leave it as is for now.
+      const response = await fetch(`/api/media/${mediaId}/download${selectedApiId ? `?apiId=${selectedApiId}` : ''}`);
+      if (!response.ok) throw new Error("Failed to get download URL");
       return response.json();
     },
     onSuccess: (data) => {
@@ -112,11 +110,9 @@ export function DetailModal({ mediaId, isOpen, onClose }: DetailModalProps) {
   });
 
   const deleteMediaMutation = useMutation({
-    mutationFn: async () => {
-      await apiRequest("DELETE", `/api/media/${mediaId}`);
-    },
+    mutationFn: () => deleteMediaItemApi(mediaId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/media"] });
+      queryClient.invalidateQueries({ queryKey: ['mediaItems'] });
       toast({
         title: "Media Deleted",
         description: "Successfully deleted the media item.",
@@ -331,37 +327,11 @@ export function DetailModal({ mediaId, isOpen, onClose }: DetailModalProps) {
               </div>
             </div>
             
-            {/* Tags Section */}
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-3">
-                <label className="text-xs text-slate-400 uppercase tracking-wide">Tags</label>
-                <Button variant="ghost" size="sm" className="text-xs text-primary hover:text-primary/80">
-                  Edit
-                </Button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {mediaItem.tags.map((tag) => (
-                  <Badge
-                    key={tag.id}
-                    variant="outline"
-                    className={`${getTagColor(tag.color)} text-xs`}
-                  >
-                    {tag.name}
-                    <button className="ml-1 hover:text-red-400">
-                      <X className="h-3 w-3" />
-                    </button>
-                  </Badge>
-                ))}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-xs border-dashed border-slate-500 text-slate-400 hover:text-white hover:border-slate-400"
-                >
-                  <Plus className="h-3 w-3 mr-1" />
-                  Add Tag
-                </Button>
-              </div>
-            </div>
+            <TagCategoryManager
+              mediaId={mediaItem.id}
+              assignedTags={mediaItem.tags}
+              assignedCategories={mediaItem.categories}
+            />
             
             {/* Folder Contents (if folder) */}
             {isFolder && (

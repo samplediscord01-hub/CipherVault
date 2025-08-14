@@ -8,12 +8,43 @@ import { z } from "zod";
 import fetch from "node-fetch";
 
 const API_PROXIES = [
-  { name: "iteraplay", url: "http://localhost:3000/iteraplay-proxy", method: "POST", type: "json", field: "link" },
-  { name: "raspywave", url: "http://localhost:3000/raspywave-proxy", method: "POST", type: "json", field: "link" },
-  { name: "rapidapi", url: "http://localhost:3000/rapidapi", method: "POST", type: "json", field: "link" },
-  { name: "tera-cc", url: "http://localhost:3000/tera-downloader-cc", method: "POST", type: "json", field: "url" },
-  { name: "ronnie-client", url: "http://localhost:3000/ronnieverse-client", method: "GET", type: "query", field: "url" }
+  { name: "playertera", url: "/api/playertera-proxy", method: "POST", type: "json", field: "url" },
+  { name: "tera-fast", url: "/api/tera-fast-proxy", method: "GET", type: "query", field: "url" },
+  { name: "teradwn", url: "/api/teradwn-proxy", method: "POST", type: "json", field: "link" },
+  { name: "iteraplay", url: "/api/iteraplay-proxy", method: "POST", type: "json", field: "link" },
+  { name: "raspywave", url: "/api/raspywave-proxy", method: "POST", type: "json", field: "link" },
+  { name: "rapidapi", url: "/api/rapidapi-proxy", method: "POST", type: "json", field: "link" },
+  { name: "tera-downloader-cc", url: "/api/tera-downloader-cc-proxy", method: "POST", type: "json", field: "url" },
+  { name: "ronnie-client", url: "/api/ronnieverse-client", method: "GET", type: "query", field: "url" }
 ];
+
+async function scrapeMetadata(mediaItemId: string) {
+  const mediaItem = await storage.getMediaItem(mediaItemId);
+  if (!mediaItem) return;
+
+  const result = await tryProxiesForDownload(mediaItem.url);
+
+  if (result) {
+    const updates = {
+      title: result.raw?.title || mediaItem.title,
+      description: result.raw?.description || mediaItem.description,
+      thumbnail: result.raw?.thumbnail || mediaItem.thumbnail,
+      duration: result.raw?.duration || mediaItem.duration,
+      size: result.size || mediaItem.size,
+      downloadUrl: result.download_url,
+      downloadExpiresAt: new Date(result.expires_at),
+      downloadFetchedAt: new Date(),
+      error: null,
+      scrapedAt: new Date(),
+    };
+    await storage.updateMediaItem(mediaItemId, updates);
+  } else {
+    await storage.updateMediaItem(mediaItemId, {
+      error: "Failed to scrape metadata from all proxies",
+      scrapedAt: new Date(),
+    });
+  }
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   
@@ -52,14 +83,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/media", async (req, res) => {
     try {
-      const validatedData = insertMediaItemSchema.parse(req.body);
-      const mediaItem = await storage.createMediaItem(validatedData);
-      res.status(201).json(mediaItem);
+      const { urls } = z.object({ urls: z.array(z.string().url()) }).parse(req.body);
+      const createdItems = [];
+
+      for (const url of urls) {
+        let mediaItem = await storage.getMediaItemByUrl(url);
+        if (!mediaItem) {
+          mediaItem = await storage.createMediaItem({ url, title: "Processing..." });
+          // Trigger background scraping
+          scrapeMetadata(mediaItem.id);
+        }
+        createdItems.push(mediaItem);
+      }
+
+      res.status(201).json(createdItems);
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ error: "Invalid data", details: error.errors });
       }
-      res.status(500).json({ error: "Failed to create media item" });
+      res.status(500).json({ error: "Failed to create media items" });
     }
   });
 
@@ -275,6 +317,219 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting API option:", error);
       res.status(500).json({ error: "Failed to delete API option" });
+    }
+  });
+
+  app.post("/api/rapidapi-proxy", async (req, res) => {
+    try {
+        const { link } = req.body;
+
+        if (!link) {
+            return res.status(400).json({ error: "No link provided" });
+        }
+
+        const response = await fetch("https://terabox-downloader-direct-download-link-generator.p.rapidapi.com/fetch", {
+            method: "POST",
+            headers: {
+                "content-type": "application/json",
+                "x-rapidapi-host": "terabox-downloader-direct-download-link-generator.p.rapidapi.com",
+                "x-rapidapi-key": "357969b221msh32ff3122376c473p103b55jsn8b5dd54f26b7",
+                "accept": "*/*"
+            },
+            body: JSON.stringify({ url: link })
+        });
+
+        const data = await response.json();
+        res.json(data);
+
+    } catch (err) {
+        res.status(500).json({ error: "err instanceof Error ? err.message : 'Unknown error'" });
+    }
+  });
+
+  app.post("/api/playertera-proxy", async (req, res) => {
+    const url = req.body.url;
+    if (!url) {
+        return res.status(400).json({ error: "Missing 'url' in request body" });
+    }
+
+    try {
+        const response = await fetch("https://playertera.com/api/process-terabox", {
+            method: "POST",
+            headers: {
+                "accept": "application/json",
+                "accept-language": "en-US,en;q=0.9",
+                "content-type": "application/json",
+                "priority": "u=1, i",
+                "sec-ch-ua": "\"Chromium\";v=\"130\", \"Google Chrome\";v=\"130\", \"Not?A_Brand\";v=\"99\"",
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": "\"Windows\"",
+                "sec-fetch-dest": "empty",
+                "sec-fetch-mode": "cors",
+                "sec-fetch-site": "same-origin",
+                "x-csrf-token": "w0p0LHPpNZFrLR6Rh78o8zBzzyXdeZdEMjiDSSD4"
+            },
+            referrer: "https://playertera.com/",
+            referrerPolicy: "strict-origin-when-cross-origin",
+            body: JSON.stringify({ url })
+        });
+
+        const text = await response.text();
+        res.send(text);
+    } catch (err) {
+        res.status(500).json({ error: "err instanceof Error ? err.message : 'Unknown error'" });
+    }
+  });
+
+  app.post("/api/tera-downloader-cc-proxy", async (req, res) => {
+    const { url } = req.body;
+    if (!url) {
+      return res.status(400).json({ error: "URL is required" });
+    }
+
+    try {
+      const response = await fetch("https://www.tera-downloader.cc/api/terabox-download", {
+        method: "POST",
+        headers: {
+          "accept": "*/*",
+          "accept-language": "en-US,en;q=0.9",
+          "content-type": "application/json",
+          "referer": "https://www.tera-downloader.cc/"
+        },
+        body: JSON.stringify({ url })
+      });
+
+      const data = await response.json();
+      res.json(data);
+    } catch (err) {
+      res.status(500).json({ error: "err instanceof Error ? err.message : 'Unknown error'" });
+    }
+  });
+
+  app.get("/api/tera-fast-proxy", async (req, res) => {
+    const { url } = req.query;
+    const key = "C7mAq";
+    if (!url) return res.status(400).json({ error: "Missing url" });
+
+    try {
+      const response = await fetch("https://hex.teraboxfast2.workers.dev/", {
+        method: "POST",
+        headers: {
+          "accept": "*/*",
+          "content-type": "application/json",
+          "sec-ch-ua": '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
+          "sec-ch-ua-mobile": "?0",
+          "sec-ch-ua-platform": '"Windows"',
+          "referer": "https://www.teraboxfast.com/"
+        },
+        body: JSON.stringify({
+          url: url,
+          key: key
+        })
+      });
+
+      const data = await response.json();
+      res.json(data);
+    } catch (err) {
+      res.status(500).json({ error: "err instanceof Error ? err.message : 'Unknown error'" });
+    }
+  });
+
+  app.post("/api/teradwn-proxy", async (req, res) => {
+    const { link } = req.body;
+    if (!link) {
+      return res.status(400).json({ error: "Link is required" });
+    }
+
+    try {
+      const params = new URLSearchParams();
+      params.append("action", "terabox_fetch");
+      params.append("url", link);
+      params.append("nonce", "ada26da710");
+
+      const response = await fetch("https://teradownloadr.com/wp-admin/admin-ajax.php", {
+        method: "POST",
+        headers: {
+          "accept": "*/*",
+          "accept-language": "en-US,en;q=0.9",
+          "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+          "x-requested-with": "XMLHttpRequest",
+          "referer": "https://teradownloadr.com/"
+        },
+        body: params.toString()
+      });
+
+      const data = await response.text();
+      res.send(data);
+    } catch (err) {
+      res.status(500).json({ error: "err instanceof Error ? err.message : 'Unknown error'" });
+    }
+  });
+
+  app.post("/api/iteraplay-proxy", async (req, res) => {
+    const link = req.body.link;
+    if (!link) {
+        return res.status(400).json({ error: "Missing 'link' in request body" });
+    }
+
+    try {
+        const response = await fetch("https://api.iteraplay.com/", {
+            method: "POST",
+            headers: {
+                "accept": "*/*",
+                "accept-language": "en-US,en;q=0.9",
+                "content-type": "application/json",
+                "priority": "u=1, i",
+                "sec-ch-ua": "\"Chromium\";v=\"130\", \"Google Chrome\";v=\"130\", \"Not?A_Brand\";v=\"99\"",
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": "\"Windows\"",
+                "sec-fetch-dest": "empty",
+                "sec-fetch-mode": "cors",
+                "sec-fetch-site": "cross-site",
+                "x-api-key": "terabox_pro_api_august_2025_premium"
+            },
+            referrer: "https://www.teraboxdownloader.pro/",
+            referrerPolicy: "strict-origin-when-cross-origin",
+            body: JSON.stringify({ link })
+        });
+
+        const text = await response.text();
+        res.send(text);
+    } catch (err) {
+        res.status(500).json({ error: "err instanceof Error ? err.message : 'Unknown error'" });
+    }
+  });
+
+  app.post("/api/raspywave-proxy", async (req, res) => {
+    const link = req.body.link;
+    if (!link) {
+        return res.status(400).json({ error: "Missing 'link' in request body" });
+    }
+
+    try {
+        const response = await fetch("https://raspy-wave-5e61.sonukalakhari76.workers.dev/", {
+            method: "POST",
+            headers: {
+                "accept": "*/*",
+                "accept-language": "en-US,en;q=0.9",
+                "content-type": "application/json",
+                "priority": "u=1, i",
+                "sec-ch-ua": "\"Chromium\";v=\"130\", \"Google Chrome\";v=\"130\", \"Not?A_Brand\";v=\"99\"",
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": "\"Windows\"",
+                "sec-fetch-dest": "empty",
+                "sec-fetch-mode": "cors",
+                "sec-fetch-site": "cross-site"
+            },
+            referrer: "https://downloadterabox.com/",
+            referrerPolicy: "strict-origin-when-cross-origin",
+            body: JSON.stringify({ link })
+        });
+
+        const text = await response.text();
+        res.send(text);
+    } catch (err) {
+        res.status(500).json({ error: "err instanceof Error ? err.message : 'Unknown error'" });
     }
   });
 

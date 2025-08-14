@@ -7,15 +7,17 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { apiRequest } from "@/lib/queryClient";
+import { getCategories, createCategory as createCategoryApi, deleteCategory as deleteCategoryApi, createTag as createTagApi, deleteTag as deleteTagApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import type { Tag } from "@shared/schema";
+import type { Tag, Category } from "@shared/schema";
 
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
   selectedTags: string[];
   onTagToggle: (tagName: string) => void;
+  selectedCategories: string[];
+  onCategoryToggle: (categoryName: string) => void;
   selectedType?: "video" | "folder";
   onTypeChange: (type: "video" | "folder" | undefined) => void;
   selectedSizeRange?: "small" | "medium" | "large";
@@ -49,19 +51,17 @@ export function Sidebar({
   onSizeRangeChange,
 }: SidebarProps) {
   const [newTagName, setNewTagName] = useState("");
+  const [newCategoryName, setNewCategoryName] = useState("");
   const [isAddingTag, setIsAddingTag] = useState(false);
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: tags = [] } = useQuery<Tag[]>({
-    queryKey: ["/api/tags"],
-  });
+  const { data: tags = [] } = useQuery<Tag[]>({ queryKey: ["/api/tags"] });
+  const { data: categories = [] } = useQuery<Category[]>({ queryKey: ["/api/categories"], queryFn: getCategories });
 
   const createTagMutation = useMutation({
-    mutationFn: async (tagData: { name: string; color: string }) => {
-      const response = await apiRequest("POST", "/api/tags", tagData);
-      return response.json();
-    },
+    mutationFn: (tagData: { name: string; color: string }) => createTagApi(tagData.name, tagData.color),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tags"] });
       setNewTagName("");
@@ -80,10 +80,46 @@ export function Sidebar({
     },
   });
 
-  const deleteTagMutation = useMutation({
-    mutationFn: async (tagId: string) => {
-      await apiRequest("DELETE", `/api/tags/${tagId}`);
+  const createCategoryMutation = useMutation({
+    mutationFn: (name: string) => createCategoryApi(name),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/categories"] });
+      setNewCategoryName("");
+      setIsAddingCategory(false);
+      toast({
+        title: "Category Created",
+        description: "Successfully created new category.",
+      });
     },
+    onError: (error) => {
+      toast({
+        title: "Create Failed",
+        description: error instanceof Error ? error.message : "Failed to create category",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteCategoryMutation = useMutation({
+    mutationFn: (categoryId: string) => deleteCategoryApi(categoryId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/categories"] });
+      toast({
+        title: "Category Deleted",
+        description: "Successfully deleted category.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Delete Failed",
+        description: error instanceof Error ? error.message : "Failed to delete category",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteTagMutation = useMutation({
+    mutationFn: (tagId: string) => deleteTagApi(tagId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tags"] });
       toast({
@@ -150,36 +186,67 @@ export function Sidebar({
           <div className="mb-8">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-medium text-slate-300">Categories</h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsAddingCategory(!isAddingCategory)}
+                className="text-xs text-primary hover:text-primary/80"
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                Add
+              </Button>
             </div>
-            <RadioGroup
-              value={selectedType || "all"}
-              onValueChange={handleTypeChange}
-              className="space-y-2"
-            >
-              <div className="flex items-center space-x-3 hover:bg-slate-700 rounded-lg p-2 transition-colors">
-                <RadioGroupItem value="all" id="all" />
-                <Label htmlFor="all" className="flex items-center space-x-2 cursor-pointer">
-                  <span className="text-sm">All Items</span>
-                  <span className="text-xs text-slate-400">(All)</span>
-                </Label>
+            {isAddingCategory && (
+              <div className="mb-3 space-y-2">
+                <Input
+                  type="text"
+                  placeholder="Category name..."
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  className="bg-slate-800 border-slate-600"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") createCategoryMutation.mutate(newCategoryName);
+                    if (e.key === "Escape") setIsAddingCategory(false);
+                  }}
+                />
+                 <div className="flex space-x-2">
+                  <Button
+                    size="sm"
+                    onClick={() => createCategoryMutation.mutate(newCategoryName)}
+                    disabled={!newCategoryName.trim() || createCategoryMutation.isPending}
+                  >
+                    Add
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsAddingCategory(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
               </div>
-              <div className="flex items-center space-x-3 hover:bg-slate-700 rounded-lg p-2 transition-colors">
-                <RadioGroupItem value="video" id="video" />
-                <Label htmlFor="video" className="flex items-center space-x-2 cursor-pointer">
-                  <Video className="text-primary w-4 h-4" />
-                  <span className="text-sm">Videos</span>
-                  <span className="text-xs text-slate-400">(Videos)</span>
-                </Label>
-              </div>
-              <div className="flex items-center space-x-3 hover:bg-slate-700 rounded-lg p-2 transition-colors">
-                <RadioGroupItem value="folder" id="folder" />
-                <Label htmlFor="folder" className="flex items-center space-x-2 cursor-pointer">
-                  <Folder className="text-amber-500 w-4 h-4" />
-                  <span className="text-sm">Folders</span>
-                  <span className="text-xs text-slate-400">(Folders)</span>
-                </Label>
-              </div>
-            </RadioGroup>
+            )}
+            <div className="space-y-2">
+              {categories.map((category) => (
+                <div key={category.id} className="flex items-center space-x-3 group">
+                  <Checkbox
+                    id={`category-${category.id}`}
+                    checked={selectedCategories.includes(category.name)}
+                    onCheckedChange={() => onCategoryToggle(category.name)}
+                  />
+                  <Label htmlFor={`category-${category.id}`} className="flex-1 text-sm cursor-pointer">{category.name}</Label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => deleteCategoryMutation.mutate(category.id)}
+                    className="w-4 h-4 p-0 opacity-0 group-hover:opacity-100 transition-opacity bg-red-600 hover:bg-red-700 rounded-full"
+                  >
+                    <X className="h-2 w-2" />
+                  </Button>
+                </div>
+              ))}
+            </div>
           </div>
           
           {/* Tags Section */}
