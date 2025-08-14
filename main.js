@@ -1,7 +1,7 @@
 import { app, BrowserWindow } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { startServer, stopServer } from '../server/index.js';
+import { startServer, stopServer } from './server/index.js';
 import fetch from 'node-fetch';
 
 const __filename = fileURLToPath(import.meta.url);
