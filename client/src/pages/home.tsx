@@ -11,7 +11,7 @@ import { MediaCard } from "@/components/media-card";
 import { DetailModal } from "@/components/detail-modal";
 import { Sidebar } from "@/components/sidebar";
 import { ApiSettings } from "@/components/api-settings";
-import type { MediaItemWithTags, MediaSearchParams } from "@shared/schema";
+import type { MediaItemWithTagsAndCategories, MediaSearchParams } from "@shared/schema";
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");

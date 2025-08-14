@@ -9,20 +9,31 @@ async function apiRequest<T>(
 ): Promise<T> {
   const fullUrl = url.startsWith('http') ? url : `${API_BASE_URL}${url}`;
   
-  const response = await fetch(fullUrl, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: data ? JSON.stringify(data) : undefined,
-  });
+  console.log(`[API Request] ${method} ${fullUrl}`, data);
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`API Error: ${response.status} ${errorText}`);
+  try {
+    const response = await fetch(fullUrl, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: data ? JSON.stringify(data) : undefined,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[API Error] ${response.status} ${errorText}`);
+      throw new Error(`API Error: ${response.status} ${errorText}`);
+    }
+
+    const responseData = await response.json();
+    console.log(`[API Response] ${method} ${fullUrl}`, responseData);
+    return responseData as T;
+
+  } catch (error) {
+    console.error(`[API Fetch Error] ${method} ${fullUrl}`, error);
+    throw error;
   }
-
-  return response.json() as Promise<T>;
 }
 
 // Media Items

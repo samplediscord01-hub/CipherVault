@@ -1,11 +1,14 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { DrizzleStorage, type IStorage } from "./storage";
 import type { Server } from "http";
 
 let server: Server | null = null;
+let storage: IStorage | null = null;
 
-export async function startServer(): Promise<{ app: Express.Application; server: Server; port: number }> {
+export async function startServer(dbName?: string): Promise<{ app: Express.Application; server: Server; port: number, storage: IStorage }> {
+  storage = new DrizzleStorage(dbName);
   const app = express();
   app.use(express.json());
   app.use(express.urlencoded({ extended: false }));
@@ -25,12 +28,13 @@ export async function startServer(): Promise<{ app: Express.Application; server:
       const duration = Date.now() - start;
       if (path.startsWith("/api")) {
         let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-        if (capturedJsonResponse) {
-          logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+
+        if (req.body && Object.keys(req.body).length > 0) {
+          logLine += `\n  body: ${JSON.stringify(req.body)}`;
         }
 
-        if (logLine.length > 80) {
-          logLine = logLine.slice(0, 79) + "…";
+        if (capturedJsonResponse) {
+          logLine += `\n  response: ${JSON.stringify(capturedJsonResponse)}`;
         }
 
         log(logLine);
@@ -40,7 +44,7 @@ export async function startServer(): Promise<{ app: Express.Application; server:
     next();
   });
 
-  const httpServer = await registerRoutes(app);
+  const httpServer = await registerRoutes(app, storage);
   server = httpServer;
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
@@ -66,25 +70,28 @@ export async function startServer(): Promise<{ app: Express.Application; server:
       reusePort: true,
     }, () => {
       log(`serving on port ${port}`);
-      resolve({ app, server: server!, port });
+      resolve({ app, server: server!, port, storage: storage! });
     });
   });
 }
 
-export function stopServer(): Promise<void> {
-    return new Promise((resolve, reject) => {
-        if (server) {
-            server.close((err) => {
-                if (err) {
-                    return reject(err);
-                }
-                log('Server stopped');
-                resolve();
-            });
-        } else {
-            resolve();
-        }
-    });
+export async function stopServer(): Promise<void> {
+  if (storage) {
+    await storage.close();
+  }
+  return new Promise((resolve, reject) => {
+      if (server) {
+          server.close((err) => {
+              if (err) {
+                  return reject(err);
+              }
+              log('Server stopped');
+              resolve();
+          });
+      } else {
+          resolve();
+      }
+  });
 }
 
 // If running this file directly (e.g. `npm run dev:server`), start the server

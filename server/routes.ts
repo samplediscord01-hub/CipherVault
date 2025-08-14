@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { storage } from "./storage";
-import { insertMediaItemSchema, insertTagSchema, type MediaSearchParams, type InsertMediaItem } from "@shared/schema";
+import { type IStorage } from "./storage";
+import { insertMediaItemSchema, insertTagSchema, insertCategorySchema, type MediaSearchParams, type InsertMediaItem } from "@shared/schema";
 import { z } from "zod";
 
 // MultiScraper integration
@@ -21,7 +21,7 @@ const API_PROXIES = [
   { name: "ronnie-client", url: "/api/ronnieverse-client", method: "GET", type: "query", field: "url" }
 ];
 
-async function scrapeMetadata(mediaItemId: string) {
+async function scrapeMetadata(mediaItemId: string, storage: IStorage) {
   const mediaItem = await storage.getMediaItem(mediaItemId);
   if (!mediaItem) return;
 
@@ -49,7 +49,7 @@ async function scrapeMetadata(mediaItemId: string) {
   }
 }
 
-export async function registerRoutes(app: Express): Promise<Server> {
+export async function registerRoutes(app: Express, storage: IStorage): Promise<Server> {
   
   app.get("/health", (req, res) => {
     res.status(200).send("OK");
@@ -98,7 +98,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!mediaItem) {
           mediaItem = await storage.createMediaItem({ url, title: "Processing..." });
           // Trigger background scraping
-          scrapeMetadata(mediaItem.id);
+          scrapeMetadata(mediaItem.id, storage);
         }
         createdItems.push(mediaItem);
       }
@@ -278,6 +278,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to remove tag from media item" });
+    }
+  });
+
+  // Categories Routes
+  app.get("/api/categories", async (req, res) => {
+    try {
+      const categories = await storage.getCategories();
+      res.json(categories);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch categories" });
+    }
+  });
+
+  app.post("/api/categories", async (req, res) => {
+    try {
+      const validatedData = insertCategorySchema.parse(req.body);
+      const category = await storage.createCategory(validatedData);
+      res.status(201).json(category);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Invalid data", details: error.errors });
+      }
+      res.status(500).json({ error: "Failed to create category" });
+    }
+  });
+
+  app.delete("/api/categories/:id", async (req, res) => {
+    try {
+      const success = await storage.deleteCategory(req.params.id);
+      if (!success) {
+        return res.status(404).json({ error: "Category not found" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete category" });
+    }
+  });
+
+  // Media Item Categories Routes
+  app.post("/api/media/:mediaId/categories/:categoryId", async (req, res) => {
+    try {
+      const { mediaId, categoryId } = req.params;
+      const result = await storage.addCategoryToMediaItem(mediaId, categoryId);
+      res.status(201).json(result);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to add category to media item" });
+    }
+  });
+
+  app.delete("/api/media/:mediaId/categories/:categoryId", async (req, res) => {
+    try {
+      const { mediaId, categoryId } = req.params;
+      const success = await storage.removeCategoryFromMediaItem(mediaId, categoryId);
+      if (!success) {
+        return res.status(404).json({ error: "Category association not found" });
+      }
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to remove category from media item" });
     }
   });
 

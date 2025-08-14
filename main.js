@@ -40,7 +40,7 @@ async function healthCheck(port) {
         return;
       }
     } catch (e) {
-      // ignore
+      console.error('Health check attempt failed:', e);
     }
     await new Promise(resolve => setTimeout(resolve, 500));
   }
